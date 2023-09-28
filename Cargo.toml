@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "michiru-home-assistant",
+    "michiru-bthome",
+]
+resolver = "2"
