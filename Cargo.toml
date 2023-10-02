@@ -1,6 +1,14 @@
 [workspace]
 members = [
-    "michiru-home-assistant",
     "michiru-bthome",
+    "michiru-device",
+    "michiru-home-assistant",
+    "michiru-inspector",
 ]
 resolver = "2"
+
+[workspace.dependencies]
+michiru-bthome = { path = "michiru-bthome" }
+michiru-device = { path = "michiru-device" }
+michiru-home-assistant = { path = "michiru-home-assistant" }
+michiru-inspector = { path = "michiru-inspector" }
