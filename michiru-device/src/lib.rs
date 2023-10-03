@@ -1,171 +1,19 @@
+mod attributes;
+mod payload;
+mod utils;
+
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Local};
 use itertools::Itertools;
 use rumqttc::{LastWill, QoS};
 
 pub use rumqttc::MqttOptions;
 
+pub use attributes::*;
+pub use payload::*;
+
 pub const BASE_TOPIC: &str = "homie";
 pub const QOS: QoS = QoS::AtLeastOnce;
 pub const HOMIE_VERSION: &str = "4.0.0";
-
-#[derive(Debug, Clone, Copy)]
-pub enum DataType {
-    Integer,
-    Float,
-    Boolean,
-    String,
-    Enum,
-    Color,
-}
-
-impl From<DataType> for Vec<u8> {
-    fn from(val: DataType) -> Self {
-        match val {
-            DataType::Integer => b"integer".to_vec(),
-            DataType::Float => b"float".to_vec(),
-            DataType::Boolean => b"boolean".to_vec(),
-            DataType::String => b"string".to_vec(),
-            DataType::Enum => b"enum".to_vec(),
-            DataType::Color => b"color".to_vec(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Payload {
-    String(String),
-    Integer(i64),
-    Float(f64),
-    Percent(f64),
-    Boolean(bool),
-    Enum(String),
-    Color(Color),
-    DateTime(DateTime<Local>),
-    Duration(Duration),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Color {
-    Rgb(u8, u8, u8),
-    Hsv(u16, u8, u8),
-}
-
-#[derive(Debug, Clone)]
-pub struct DeviceAttributes {
-    pub id: String,
-    pub homie: String,
-    pub name: String,
-    pub state: DeviceState,
-    pub nodes: Vec<NodeAttributes>,
-    pub extensions: Vec<String>,
-    pub implementation: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NodeAttributes {
-    pub id: String,
-    pub name: String,
-    pub type_: String,
-    pub properties: Vec<PropertyAttributes>,
-}
-
-#[derive(Debug, Clone)]
-pub struct PropertyAttributes {
-    pub id: String,
-    pub name: String,
-    pub datatype: DataType,
-    pub settable: bool,
-    pub retained: bool,
-    pub unit: Option<Unit>,
-    pub format: Option<Format>,
-}
-
-// depends on DataType, maybe don't put in one enum like this?
-#[derive(Debug, Clone)]
-pub enum Format {
-    IntRange(i64, i64),
-    FloatRange(f64, f64),
-    Enum(Vec<String>),
-    ColorRgb,
-    ColorHsv,
-}
-
-impl From<Format> for Vec<u8> {
-    fn from(format: Format) -> Self {
-        match format {
-            Format::IntRange(a, b) => format!("{}:{}", a, b).into_bytes(),
-            Format::FloatRange(a, b) => format!("{}:{}", a, b).into_bytes(),
-            Format::Enum(values) => values.join(",").into_bytes(),
-            Format::ColorRgb => b"rgb".to_vec(),
-            Format::ColorHsv => b"hsv".to_vec(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Unit {
-    DegreeCelsius,
-    DegreeFahrenheit,
-    Degree,
-    Liter,
-    Galon,
-    Volts,
-    Watt,
-    Ampere,
-    Percent,
-    Meter,
-    Feet,
-    Pascal,
-    Psi,
-    Count,
-    Other(String),
-}
-
-impl From<Unit> for Vec<u8> {
-    fn from(unit: Unit) -> Self {
-        match unit {
-            Unit::DegreeCelsius => "°C".to_string().into_bytes(),
-            Unit::DegreeFahrenheit => "°F".to_string().into_bytes(),
-            Unit::Degree => "°".to_string().into_bytes(),
-            Unit::Liter => b"L".to_vec(),
-            Unit::Galon => b"gal".to_vec(),
-            Unit::Volts => b"V".to_vec(),
-            Unit::Watt => b"W".to_vec(),
-            Unit::Ampere => b"A".to_vec(),
-            Unit::Percent => b"%".to_vec(),
-            Unit::Meter => b"m".to_vec(),
-            Unit::Feet => b"ft".to_vec(),
-            Unit::Pascal => b"Pa".to_vec(),
-            Unit::Psi => b"psi".to_vec(),
-            Unit::Count => b"#".to_vec(),
-            Unit::Other(v) => v.into_bytes(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum DeviceState {
-    Init,
-    Ready,
-    Disconnected,
-    Sleeping,
-    Lost,
-    Alert,
-}
-
-impl From<DeviceState> for Vec<u8> {
-    fn from(val: DeviceState) -> Self {
-        match val {
-            DeviceState::Init => b"init".to_vec(),
-            DeviceState::Ready => b"ready".to_vec(),
-            DeviceState::Disconnected => b"disconnected".to_vec(),
-            DeviceState::Sleeping => b"sleeping".to_vec(),
-            DeviceState::Lost => b"lost".to_vec(),
-            DeviceState::Alert => b"alert".to_vec(),
-        }
-    }
-}
 
 #[must_use]
 pub struct DeviceBuilder {
@@ -180,8 +28,7 @@ pub struct Device {
 
 pub struct Node<'a> {
     device: &'a Device,
-    attributes: NodeAttributes,
-    properties: Vec<PropertyAttributes>,
+    attributes: &'a NodeAttributes,
 }
 
 pub struct Property<'a> {
@@ -198,6 +45,10 @@ impl DeviceBuilder {
     ) -> Result<Self> {
         let id = id.into();
         let name = name.into();
+
+        if !utils::valid_topic_id(&id) {
+            return Err(anyhow::anyhow!("Invalid device id"));
+        }
 
         options.set_last_will(LastWill::new(
             format!("{BASE_TOPIC}/{id}/$state"),
@@ -232,50 +83,15 @@ impl DeviceBuilder {
     }
 
     pub async fn node(mut self, node: NodeAttributes) -> Result<Self> {
+        if !utils::valid_topic_id(&node.id) {
+            return Err(anyhow::anyhow!("Invalid node id"));
+        }
+
         let id = node.id.clone();
         self.device.nodes.push(node);
         let node = self.device.node(&id).unwrap();
 
-        node.send_topic("$name", node.attributes.name.clone())
-            .await?;
-        node.send_topic("$type", node.attributes.type_.clone())
-            .await?;
-        node.send_topic(
-            "$properties",
-            node.attributes
-                .properties
-                .iter()
-                .map(|p| p.id.as_str())
-                .collect::<Vec<&str>>()
-                .join(","),
-        )
-        .await?;
-
-        for property in node.properties() {
-            property
-                .send_topic("$name", property.attributes.name.clone())
-                .await?;
-
-            property
-                .send_topic("$datatype", property.attributes.datatype)
-                .await?;
-
-            property
-                .send_topic("$settable", property.attributes.settable.to_string())
-                .await?;
-
-            property
-                .send_topic("$retained", property.attributes.retained.to_string())
-                .await?;
-
-            if let Some(format) = &property.attributes.format {
-                property.send_topic("$format", format.clone()).await?;
-            }
-
-            if let Some(unit) = &property.attributes.unit {
-                property.send_topic("$unit", unit.clone()).await?;
-            }
-        }
+        node.advertise().await?;
 
         Ok(self)
     }
@@ -319,8 +135,7 @@ impl Device {
             .find(|node| node.id == id)
             .map(|attributes| Node {
                 device: self,
-                attributes: attributes.clone(),
-                properties: attributes.properties.clone(),
+                attributes: attributes,
             })
     }
 
@@ -329,8 +144,7 @@ impl Device {
             .iter()
             .map(|attributes| Node {
                 device: self,
-                attributes: attributes.clone(),
-                properties: attributes.properties.clone(),
+                attributes: attributes,
             })
             .collect()
     }
@@ -361,8 +175,32 @@ impl Node<'_> {
             .await
     }
 
+    async fn advertise(&self) -> Result<()> {
+        self.send_topic("$name", self.attributes.name.clone())
+            .await?;
+        self.send_topic("$type", self.attributes.type_.clone())
+            .await?;
+        self.send_topic(
+            "$properties",
+            self.attributes
+                .properties
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<&str>>()
+                .join(","),
+        )
+        .await?;
+
+        for property in self.properties() {
+            property.advertise().await?;
+        }
+
+        Ok(())
+    }
+
     pub fn property(&self, id: &str) -> Option<Property> {
-        self.properties
+        self.attributes
+            .properties
             .iter()
             .find(|property| property.id == id)
             .map(|attributes| Property {
@@ -372,13 +210,34 @@ impl Node<'_> {
     }
 
     pub fn properties(&self) -> Vec<Property> {
-        self.properties
+        self.attributes
+            .properties
             .iter()
             .map(|attributes| Property {
                 node: self,
                 attributes: attributes.clone(),
             })
             .collect()
+    }
+
+    pub async fn property_or_insert(&mut self, attributes: PropertyAttributes) -> Result<Property> {
+        // work around a limitiation of borrowck??
+        if self.property(&attributes.id).is_some() {
+            return Ok(self.property(&attributes.id).unwrap());
+        }
+
+        self.device.send_topic("$state", DeviceState::Init).await?;
+
+        let id = attributes.id.clone();
+
+        // TODO: make this possible
+        // self.attributes.properties.push(attributes);
+
+        self.advertise().await?;
+
+        self.device.send_topic("$state", DeviceState::Ready).await?;
+
+        Ok(self.property(&id).unwrap())
     }
 }
 
@@ -390,6 +249,30 @@ impl Property<'_> {
                 payload,
             )
             .await
+    }
+
+    async fn advertise(&self) -> Result<()> {
+        self.send_topic("$name", self.attributes.name.clone())
+            .await?;
+
+        self.send_topic("$datatype", self.attributes.datatype)
+            .await?;
+
+        self.send_topic("$settable", self.attributes.settable.to_string())
+            .await?;
+
+        self.send_topic("$retained", self.attributes.retained.to_string())
+            .await?;
+
+        if let Some(format) = &self.attributes.format {
+            self.send_topic("$format", format.clone()).await?;
+        }
+
+        if let Some(unit) = &self.attributes.unit {
+            self.send_topic("$unit", unit.clone()).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn send(&self, payload: Payload) -> Result<()> {
@@ -405,7 +288,7 @@ impl Property<'_> {
                 Color::Hsv(h, s, v) => format!("{},{},{}", h, s, v).into_bytes(),
             },
             Payload::DateTime(v) => v.to_rfc3339().into_bytes(),
-            Payload::Duration(v) => v.num_seconds().to_string().into_bytes(),
+            Payload::Duration(_) => todo!(),
         };
 
         self.node

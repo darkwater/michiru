@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
-use std::string::FromUtf8Error;
 
 use bytes::Bytes;
 use chrono::{DateTime, Local};
-use egui::{collapsing_header::CollapsingState, CollapsingHeader, Id, RichText, Ui};
+use egui::{collapsing_header::CollapsingState, Id, Ui};
+use serde_json::Value;
 
 const SEPARATOR: char = '/';
 
@@ -56,8 +56,12 @@ impl TopicTree {
 
                     ui.label("=");
                     ui.label(match &value.payload {
-                        TopicPayload::String(value) => value,
-                        _ => "...",
+                        TopicPayload::String(value) => value.into(),
+                        TopicPayload::Json(Value::String(value)) => value.clone(),
+                        TopicPayload::Json(Value::Number(value)) => value.to_string(),
+                        TopicPayload::Json(Value::Bool(value)) => value.to_string(),
+                        TopicPayload::Json(Value::Null) => "null".into(),
+                        _ => "...".into(),
                     });
 
                     if res.clicked() {

@@ -29,7 +29,7 @@ async fn main() {
         eframe::run_native(
             "Michiru Inspector",
             native_options,
-            Box::new(|cc| Box::new(InspectorApp::new(cc, rx))),
+            Box::new(|_cc| Box::new(InspectorApp::new(rx))),
         )
         .unwrap();
     });
@@ -41,7 +41,7 @@ struct InspectorApp {
 }
 
 impl InspectorApp {
-    fn new(cc: &eframe::CreationContext<'_>, rx: UnboundedReceiver<TopicValue>) -> Self {
+    fn new(rx: UnboundedReceiver<TopicValue>) -> Self {
         Self {
             rx,
             state: AppState::default(),
@@ -50,7 +50,7 @@ impl InspectorApp {
 }
 
 impl eframe::App for InspectorApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(value) = self.rx.try_recv() {
             self.state.topic_tree.insert(value);
         }
