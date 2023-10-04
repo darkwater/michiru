@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
                             .node(NodeAttributes {
                                 id: LINK_ID.into(),
                                 name: "Link".into(),
-                                type_: "Link".into(),
+                                type_: "Bluetooth".into(),
                                 properties: vec![PropertyAttributes {
                                     id: RSSI_ID.into(),
                                     name: "RSSI".into(),
