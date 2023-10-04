@@ -59,13 +59,16 @@ async fn main() -> anyhow::Result<()> {
                 #[cfg(not(target_os = "macos"))]
                 let id = properties.address.to_string_no_delim().to_lowercase();
                 #[cfg(target_os = "macos")]
-                let id = name.to_lowercase();
+                let id = id.to_string().to_lowercase();
+                // let id = name.to_lowercase().replace(
+                //     |c: char| !(c.is_lowercase() || c.is_ascii_digit() || c == '-'),
+                //     "-",
+                // );
 
                 let id = format!("bthome-{id}");
 
                 const LINK_ID: &str = "link";
                 const RSSI_ID: &str = "rssi";
-                const SENSOR_ID: &str = "sensor";
 
                 let device = match devices.entry(id.clone()) {
                     Entry::Occupied(entry) => entry.into_mut(),
@@ -89,13 +92,6 @@ async fn main() -> anyhow::Result<()> {
                                 }],
                             })
                             .await?
-                            .node(NodeAttributes {
-                                id: SENSOR_ID.into(),
-                                name: "Sensor".into(),
-                                type_: "Sensor".into(),
-                                properties: vec![],
-                            })
-                            .await?
                             .build()
                             .await?
                     }),
@@ -112,12 +108,12 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 for object in Object::decode(data.as_slice())? {
-                    let (attrs, payload) = object.into_michiru();
+                    let (node, property, payload) = object.into_michiru();
 
                     device
-                        .node(SENSOR_ID)
-                        .unwrap()
-                        .property_or_insert(attrs)
+                        .node_or_insert(&node)
+                        .await?
+                        .property_or_insert(&property)
                         .await?
                         .send(payload)
                         .await?;

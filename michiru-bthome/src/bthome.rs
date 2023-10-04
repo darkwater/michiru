@@ -1,6 +1,33 @@
 use anyhow::{bail, Result};
 use bytes::Buf;
-use michiru_device::{DataType, Format, Payload, PropertyAttributes, Unit};
+use michiru_device::{DataType, Format, NodeAttributes, Payload, PropertyAttributes, Unit};
+
+fn node_battery() -> NodeAttributes {
+    NodeAttributes {
+        id: "battery".into(),
+        name: "Battery".into(),
+        type_: "Battery".into(),
+        properties: vec![],
+    }
+}
+
+fn node_thermometer() -> NodeAttributes {
+    NodeAttributes {
+        id: "thermometer".into(),
+        name: "Thermometer".into(),
+        type_: "Thermometer".into(),
+        properties: vec![],
+    }
+}
+
+fn node_hygrometer() -> NodeAttributes {
+    NodeAttributes {
+        id: "hygrometer".into(),
+        name: "Hygrometer".into(),
+        type_: "Hygrometer".into(),
+        properties: vec![],
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Object {
@@ -51,9 +78,10 @@ impl Object {
         Ok(out)
     }
 
-    pub fn into_michiru(self) -> (PropertyAttributes, Payload) {
+    pub fn into_michiru(self) -> (NodeAttributes, PropertyAttributes, Payload) {
         match self {
             Object::Battery(v) => (
+                node_battery(),
                 PropertyAttributes {
                     id: "battery".into(),
                     name: "Battery".into(),
@@ -66,6 +94,7 @@ impl Object {
                 Payload::Float(v as f64),
             ),
             Object::Temperature(v) => (
+                node_thermometer(),
                 PropertyAttributes {
                     id: "temperature".into(),
                     name: "Temperature".into(),
@@ -78,6 +107,7 @@ impl Object {
                 Payload::Float(v as f64),
             ),
             Object::Humidity(v) => (
+                node_hygrometer(),
                 PropertyAttributes {
                     id: "humidity".into(),
                     name: "Humidity".into(),
@@ -90,6 +120,7 @@ impl Object {
                 Payload::Float(v as f64),
             ),
             Object::Voltage(v) => (
+                node_battery(),
                 PropertyAttributes {
                     id: "voltage".into(),
                     name: "Battery voltage".into(),
@@ -102,6 +133,7 @@ impl Object {
                 Payload::Float(v as f64),
             ),
             Object::Power(v) => (
+                node_battery(),
                 PropertyAttributes {
                     id: "power".into(),
                     name: "Power".into(),

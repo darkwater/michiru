@@ -8,7 +8,7 @@ use crate::topic_tree::TopicValue;
 
 pub fn run(tx: UnboundedSender<TopicValue>) {
     tokio::task::spawn(async move {
-        let mut mqttoptions = MqttOptions::new("michiru", "192.168.0.106", 1883);
+        let mut mqttoptions = MqttOptions::new("michiru", "michiru.fbk.red", 1883);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
         mqttoptions.set_max_packet_size(1024 * 1024, 1024 * 1024);
 
