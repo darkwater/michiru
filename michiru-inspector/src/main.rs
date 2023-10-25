@@ -1,18 +1,15 @@
 mod mqtt_task;
+mod pane;
 mod state;
 mod topic_tree;
 
 use std::time::Duration;
 
-use chrono::Local;
-use egui::ScrollArea;
-use egui_json_tree::{DefaultExpand, JsonTree};
+use eframe::CreationContext;
+use egui_dock::{DockArea, DockState};
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use self::{
-    state::AppState,
-    topic_tree::{TopicPayload, TopicValue},
-};
+use self::{pane::Pane, state::AppState, topic_tree::TopicValue};
 
 #[tokio::main]
 async fn main() {
@@ -29,75 +26,54 @@ async fn main() {
         eframe::run_native(
             "Michiru Inspector",
             native_options,
-            Box::new(|_cc| Box::new(InspectorApp::new(rx))),
+            Box::new(|cc| Box::new(InspectorApp::new(cc, rx))),
         )
         .unwrap();
     });
 }
 
 struct InspectorApp {
-    rx: UnboundedReceiver<TopicValue>,
     state: AppState,
+    dock_state: DockState<Pane>,
 }
 
 impl InspectorApp {
-    fn new(rx: UnboundedReceiver<TopicValue>) -> Self {
-        Self {
-            rx,
-            state: AppState::default(),
-        }
+    fn new(cc: &CreationContext, rx: UnboundedReceiver<TopicValue>) -> Self {
+        let dock_state = cc
+            .storage
+            .and_then(|storage| eframe::get_value(storage, "dock_state"))
+            .unwrap_or_else(|| DockState::new(Pane::all()));
+
+        Self { state: AppState::new(rx), dock_state }
     }
 }
 
 impl eframe::App for InspectorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        while let Ok(value) = self.rx.try_recv() {
-            self.state.topic_tree.insert(value);
-        }
+        self.state.update();
 
-        egui::SidePanel::left("tree").show(ctx, |ui| {
-            ScrollArea::new([true; 2])
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    self.state.topic_tree.show(ui, &mut self.state.selected);
-                });
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ScrollArea::new([true; 2])
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    if let Some(value) = &self
-                        .state
-                        .selected
-                        .as_ref()
-                        .and_then(|v| self.state.topic_tree.get(&v.topic))
-                    {
-                        let seconds = Local::now()
-                            .signed_duration_since(value.received)
-                            .num_seconds();
-
-                        ui.heading(&value.topic);
-                        ui.add_space(5.);
-                        ui.label(format!("{seconds} seconds ago"));
-                        ui.add_space(5.);
-                        match &value.payload {
-                            TopicPayload::Json(v) => {
-                                JsonTree::new(&value.topic, v)
-                                    .default_expand(DefaultExpand::ToLevel(0))
-                                    .show(ui);
-                            }
-                            TopicPayload::String(v) => {
-                                ui.label(v);
-                            }
-                            TopicPayload::Bytes(v) => {
-                                ui.label(format!("{:02x?}", v));
-                            }
-                        };
-                    }
-                });
-        });
+        DockArea::new(&mut self.dock_state).show(ctx, &mut TabViewer { state: &mut self.state });
 
         ctx.request_repaint_after(Duration::from_millis(50));
+    }
+}
+
+struct TabViewer<'a> {
+    state: &'a mut AppState,
+}
+
+impl egui_dock::TabViewer for TabViewer<'_> {
+    type Tab = Pane;
+
+    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+        match tab {
+            Pane::MqttTopics => "MQTT Topics".into(),
+            Pane::HomieDevices => "Homie Devices".into(),
+            Pane::Zigbee2Mqtt(_) => "Zigbee2Mqtt".into(),
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
+        tab.ui(ui, self.state);
     }
 }
