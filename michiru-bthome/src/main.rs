@@ -1,9 +1,11 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
-use btleplug::api::bleuuid::uuid_from_u16;
-use btleplug::api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter};
-use btleplug::platform::Manager;
+use btleplug::{
+    api::{
+        bleuuid::uuid_from_u16, Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter,
+    },
+    platform::Manager,
+};
 use futures::StreamExt;
 use michiru_device::{
     DataType, DeviceBuilder, MqttOptions, NodeAttributes, Payload, PropertyAttributes, Unit,
@@ -80,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
                             .node(NodeAttributes {
                                 id: LINK_ID.into(),
                                 name: "Link".into(),
-                                type_: "Bluetooth".into(),
+                                type_: "Bluetooth LE".into(),
                                 properties: vec![PropertyAttributes {
                                     id: RSSI_ID.into(),
                                     name: "RSSI".into(),

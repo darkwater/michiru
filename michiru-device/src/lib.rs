@@ -5,13 +5,11 @@ mod utils;
 use std::cell::RefCell;
 
 use anyhow::{Context, Result};
-use itertools::Itertools;
-use rumqttc::{LastWill, QoS};
-
-pub use rumqttc::MqttOptions;
-
 pub use attributes::*;
+use itertools::Itertools;
 pub use payload::*;
+pub use rumqttc::MqttOptions;
+use rumqttc::{LastWill, QoS};
 pub use utils::*;
 
 pub const BASE_TOPIC: &str = "homie";
@@ -73,11 +71,7 @@ impl DeviceBuilder {
             }
         });
 
-        let device = Device {
-            mqtt,
-            id,
-            nodes: vec![],
-        };
+        let device = Device { mqtt, id, nodes: vec![] };
 
         device.send_topic("$homie", HOMIE_VERSION).await?;
         device.send_topic("$state", DeviceState::Init).await?;
@@ -130,12 +124,7 @@ impl Device {
         retain: bool,
     ) -> Result<()> {
         self.mqtt
-            .publish(
-                format!("{BASE_TOPIC}/{id}/{topic}", id = self.id),
-                QOS,
-                retain,
-                payload,
-            )
+            .publish(format!("{BASE_TOPIC}/{id}/{topic}", id = self.id), QOS, retain, payload)
             .await
             .with_context(|| format!("Failed to publish to topic {topic}"))
     }
@@ -144,19 +133,13 @@ impl Device {
         self.nodes
             .iter()
             .find(|node| node.borrow().id == id)
-            .map(|attributes| Node {
-                device: self,
-                attributes,
-            })
+            .map(|attributes| Node { device: self, attributes })
     }
 
     pub fn nodes(&self) -> Vec<Node> {
         self.nodes
             .iter()
-            .map(|attributes| Node {
-                device: self,
-                attributes,
-            })
+            .map(|attributes| Node { device: self, attributes })
             .collect()
     }
 
@@ -172,11 +155,8 @@ impl Device {
 
         self.nodes.push(RefCell::new(attributes.clone()));
 
-        self.send_topic(
-            "$nodes",
-            self.nodes.iter().map(|n| n.borrow().id.clone()).join(","),
-        )
-        .await?;
+        self.send_topic("$nodes", self.nodes.iter().map(|n| n.borrow().id.clone()).join(","))
+            .await?;
 
         self.send_topic("$state", DeviceState::Ready).await?;
 
@@ -288,10 +268,7 @@ impl Node<'_> {
 impl Property<'_> {
     async fn send_topic(&self, topic: &str, payload: impl Into<Vec<u8>>) -> Result<()> {
         self.node
-            .send_topic(
-                format!("{}/{}", self.attributes.id, topic).as_str(),
-                payload,
-            )
+            .send_topic(format!("{}/{}", self.attributes.id, topic).as_str(), payload)
             .await
     }
 
@@ -336,11 +313,7 @@ impl Property<'_> {
         };
 
         self.node
-            .send_topic_with_retain(
-                self.attributes.id.as_str(),
-                payload,
-                self.attributes.retained,
-            )
+            .send_topic_with_retain(self.attributes.id.as_str(), payload, self.attributes.retained)
             .await
     }
 }

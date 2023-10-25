@@ -2,58 +2,31 @@ mod definitions;
 
 use std::time::Duration;
 
-use itertools::Itertools;
-use rumqttc::{AsyncClient, ConnectionError, Event, MqttOptions, Packet, QoS};
-use rxrust::prelude::*;
+use anyhow::Result;
+use michiru_device::{
+    DataType, DeviceBuilder, Format, MqttOptions, NodeAttributes, PropertyAttributes, Unit,
+};
+use michiru_zigbee2mqtt::{
+    definitions::{DeviceDefinition, DeviceInfo, Expose, Feature, FeatureType},
+    DefinitionStream,
+};
 use tokio::task::JoinHandle;
 
-use crate::definitions::DeviceInfo;
-
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let mut mqttoptions = MqttOptions::new("michiru", "michiru.fbk.red", 1883);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    mqttoptions.set_max_packet_size(1024 * 1024, 1024 * 1024);
+    let mut mqttoptions = MqttOptions::new("michiru-zigbee2mqtt", "michiru.fbk.red", 1883);
+    mqttoptions.set_max_packet_size(16 * 1024 * 1024, 1024);
 
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    client
-        .subscribe("zigbee2mqtt/bridge/devices", QoS::ExactlyOnce)
-        .await
-        .unwrap();
+    let mut stream = DefinitionStream::new(mqttoptions).await;
 
     let mut handle = None::<JoinHandle<()>>;
 
     loop {
-        let notification = eventloop.poll().await.unwrap();
-        tracing::trace!(?notification);
-
-        let Event::Incoming(Packet::Publish(obj)) = notification else {
-            continue;
-        };
-
-        let Ok(devices) = serde_json::from_slice::<Vec<serde_json::Value>>(&obj.payload) else {
-            continue;
-        };
-
-        let devices = devices
-            .iter()
-            .filter_map(
-                |device| match serde_json::from_value::<DeviceInfo>(device.clone()) {
-                    Ok(device) => {
-                        // tracing::info!("{devices:#?}");
-                        Some(device)
-                    }
-                    Err(e) => {
-                        tracing::error!(?e, "{device:#?}");
-                        None
-                    }
-                },
-            )
-            .collect_vec();
+        let devices = stream.next().await.unwrap();
 
         if let Some(handle) = handle.take() {
             handle.abort();
@@ -61,15 +34,78 @@ async fn main() {
 
         let mut n = 0;
         handle = Some(tokio::spawn(async move {
-            // let mut devices = devices.into_iter().map(|device| device.id).collect_vec();
-            // devices.sort();
-            // tracing::info!(?devices);
-            println!("{}", devices.len());
-            loop {
-                println!("{n}");
-                n += 1;
-                tokio::time::sleep(Duration::from_secs(1)).await;
+            for device in devices {
+                handle_device(device);
             }
         }));
     }
+}
+
+async fn handle_device(device: DeviceInfo) -> Result<()> {
+    let options = MqttOptions::new("michiru-zigbee2mqtt-{}", "michiru.fbk.red", 1883);
+    let id = format!("zigbee2mqtt-{}", device.ieee_address);
+    let name = device.model_id;
+
+    let mut homie = DeviceBuilder::new(options, id, name).await?;
+    for expose in device.definition.exposes {
+        match (&expose, expose.property()) {
+            (Expose::Generic(Feature::Numeric { .. }), "linkquality") => {
+                homie = homie
+                    .node(NodeAttributes {
+                        id: "link".to_string(),
+                        name: "Link".to_string(),
+                        type_: "Zigbee".to_string(),
+                        properties: vec![PropertyAttributes {
+                            id: "quality".to_string(),
+                            name: "Quality".to_string(),
+                            datatype: DataType::Integer,
+                            settable: false,
+                            retained: true,
+                            unit: Some(Unit::Other("lqi".to_string())),
+                            format: Some(Format::IntRange(0, 255)),
+                        }],
+                    })
+                    .await?;
+            }
+            (Expose::Generic(Feature::Numeric { .. }), "battery") => {
+                homie = homie
+                    .node(NodeAttributes {
+                        id: "battery".to_string(),
+                        name: "Battery".to_string(),
+                        type_: "Battery".to_string(),
+                        properties: vec![PropertyAttributes {
+                            id: "level".to_string(),
+                            name: "Level".to_string(),
+                            datatype: DataType::Integer,
+                            settable: false,
+                            retained: true,
+                            unit: Some(Unit::Other("lqi".to_string())),
+                            format: Some(Format::IntRange(0, 100)),
+                        }],
+                    })
+                    .await?;
+            }
+            (Expose::Generic(Feature::Enum { values, .. }), "action") => {
+                homie = homie
+                    .node(NodeAttributes {
+                        id: "action".to_string(),
+                        name: "Action".to_string(),
+                        type_: "Action".to_string(),
+                        properties: vec![PropertyAttributes {
+                            id: "action".to_string(),
+                            name: "Action".to_string(),
+                            datatype: DataType::Enum,
+                            settable: false,
+                            retained: false,
+                            unit: None,
+                            format: Some(Format::Enum(values.clone())),
+                        }],
+                    })
+                    .await?;
+            }
+            _ => todo!(),
+        }
+    }
+
+    Ok(())
 }
