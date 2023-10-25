@@ -2,7 +2,10 @@ mod definitions;
 
 use std::time::Duration;
 
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use itertools::Itertools;
+use rumqttc::{AsyncClient, ConnectionError, Event, MqttOptions, Packet, QoS};
+use rxrust::prelude::*;
+use tokio::task::JoinHandle;
 
 use crate::definitions::DeviceInfo;
 
@@ -22,25 +25,51 @@ async fn main() {
         .await
         .unwrap();
 
+    let mut handle = None::<JoinHandle<()>>;
+
     loop {
         let notification = eventloop.poll().await.unwrap();
         tracing::trace!(?notification);
 
-        if let Event::Incoming(Packet::Publish(obj)) = notification {
-            let Ok(devices) = serde_json::from_slice::<Vec<serde_json::Value>>(&obj.payload) else {
-                continue;
-            };
+        let Event::Incoming(Packet::Publish(obj)) = notification else {
+            continue;
+        };
 
-            for device in devices {
-                match serde_json::from_value::<DeviceInfo>(device.clone()) {
-                    Ok(devices) => {
-                        tracing::info!("{devices:#?}");
+        let Ok(devices) = serde_json::from_slice::<Vec<serde_json::Value>>(&obj.payload) else {
+            continue;
+        };
+
+        let devices = devices
+            .iter()
+            .filter_map(
+                |device| match serde_json::from_value::<DeviceInfo>(device.clone()) {
+                    Ok(device) => {
+                        // tracing::info!("{devices:#?}");
+                        Some(device)
                     }
                     Err(e) => {
-                        tracing::error!(?e, ?device);
+                        tracing::error!(?e, "{device:#?}");
+                        None
                     }
-                }
-            }
+                },
+            )
+            .collect_vec();
+
+        if let Some(handle) = handle.take() {
+            handle.abort();
         }
+
+        let mut n = 0;
+        handle = Some(tokio::spawn(async move {
+            // let mut devices = devices.into_iter().map(|device| device.id).collect_vec();
+            // devices.sort();
+            // tracing::info!(?devices);
+            println!("{}", devices.len());
+            loop {
+                println!("{n}");
+                n += 1;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }));
     }
 }

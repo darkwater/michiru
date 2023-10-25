@@ -1283,6 +1283,7 @@ dependencies = [
  "futures-core",
  "futures-task",
  "futures-util",
+ "num_cpus",
 ]
 
 [[package]]
@@ -1328,6 +1329,18 @@ name = "futures-task"
 version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76d3d132be6c0e6aa1534069c705a74a5997a356c0dc2f86a47765e5617c5b65"
+
+[[package]]
+name = "futures-time"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6404853a6824881fe5f7d662d147dc4e84ecd2259ba0378f272a71dab600758a"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-core",
+ "pin-project-lite",
+]
 
 [[package]]
 name = "futures-util"
@@ -1395,6 +1408,18 @@ dependencies = [
  "khronos_api",
  "log",
  "xml-rs",
+]
+
+[[package]]
+name = "gloo-timers"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b995a66bb87bebce9a0f4a95aed01daca4872c050bfcb21653361c03bc35e5c"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1870,7 +1895,10 @@ name = "michiru-zigbee2mqtt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
+ "itertools 0.11.0",
  "rumqttc",
+ "rxrust",
  "serde",
  "serde_json",
  "tokio",
@@ -2630,6 +2658,22 @@ checksum = "3c7d5dece342910d9ba34d259310cae3e0154b873b35408b787b59bce53d34fe"
 dependencies = [
  "ring",
  "untrusted",
+]
+
+[[package]]
+name = "rxrust"
+version = "1.0.0-beta.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc8b418ee6ab299d107b70cb189c1d9f769dc05cfd3e078ec631cd5560f35df3"
+dependencies = [
+ "futures",
+ "futures-time",
+ "gloo-timers",
+ "once_cell",
+ "pin-project-lite",
+ "smallvec",
+ "tokio",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

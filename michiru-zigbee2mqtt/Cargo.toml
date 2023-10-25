@@ -7,9 +7,12 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.75"
+futures = "0.3.28"
+itertools = "0.11.0"
 rumqttc = "0.22.0"
-serde = { version = "1.0.188", features = ["derive"] }
+rxrust = { version = "1.0.0-beta.4", default_features = true, features = ["tokio-scheduler"] }
 serde_json = "1.0.107"
+serde = { version = "1.0.188", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros", "sync"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
