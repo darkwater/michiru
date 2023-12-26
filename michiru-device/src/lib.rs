@@ -1,16 +1,15 @@
+use anyhow::{Context, Result};
+use itertools::Itertools;
+use rumqttc::{LastWill, QoS};
+use tokio::sync::RwLock;
+
 mod attributes;
 mod payload;
 mod utils;
 
-use std::cell::RefCell;
-
-use anyhow::{Context, Result};
-pub use attributes::*;
-use itertools::Itertools;
-pub use payload::*;
 pub use rumqttc::MqttOptions;
-use rumqttc::{LastWill, QoS};
-pub use utils::*;
+
+pub use self::{attributes::*, payload::*, utils::*};
 
 pub const BASE_TOPIC: &str = "homie";
 pub const QOS: QoS = QoS::AtLeastOnce;
@@ -24,13 +23,13 @@ pub struct DeviceBuilder {
 pub struct Device {
     mqtt: rumqttc::AsyncClient,
     id: String,
-    // TODO: can we do this without RefCell?
-    nodes: Vec<RefCell<NodeAttributes>>,
+    // TODO: can we do this without synchronisation?
+    nodes: Vec<RwLock<NodeAttributes>>,
 }
 
 pub struct Node<'a> {
     device: &'a Device,
-    attributes: &'a RefCell<NodeAttributes>,
+    attributes: &'a RwLock<NodeAttributes>,
 }
 
 pub struct Property<'a> {
@@ -86,7 +85,7 @@ impl DeviceBuilder {
         }
 
         let id = node.id.clone();
-        self.device.nodes.push(RefCell::new(node));
+        self.device.nodes.push(RwLock::new(node));
         let node = self.device.node(&id).unwrap();
 
         node.advertise().await?;
@@ -101,7 +100,7 @@ impl DeviceBuilder {
                 self.device
                     .nodes
                     .iter()
-                    .map(|n| n.borrow().id.clone())
+                    .map(|n| n.try_read().unwrap().id.clone())
                     .join(","),
             )
             .await?;
@@ -132,7 +131,7 @@ impl Device {
     pub fn node(&self, id: &str) -> Option<Node> {
         self.nodes
             .iter()
-            .find(|node| node.borrow().id == id)
+            .find(|node| node.try_read().unwrap().id == id)
             .map(|attributes| Node { device: self, attributes })
     }
 
@@ -153,10 +152,16 @@ impl Device {
 
         let id = attributes.id.clone();
 
-        self.nodes.push(RefCell::new(attributes.clone()));
+        self.nodes.push(RwLock::new(attributes.clone()));
 
-        self.send_topic("$nodes", self.nodes.iter().map(|n| n.borrow().id.clone()).join(","))
-            .await?;
+        self.send_topic(
+            "$nodes",
+            self.nodes
+                .iter()
+                .map(|n| n.try_read().unwrap().id.clone())
+                .join(","),
+        )
+        .await?;
 
         self.send_topic("$state", DeviceState::Ready).await?;
 
@@ -182,23 +187,24 @@ impl Node<'_> {
     ) -> Result<()> {
         self.device
             .send_topic_with_retain(
-                format!("{}/{}", self.attributes.borrow().id, topic).as_str(),
+                format!("{}/{}", self.attributes.read().await.id, topic).as_str(),
                 payload,
                 retain,
             )
             .await
     }
 
-    #[allow(clippy::await_holding_refcell_ref)]
+    // #[allow(clippy::await_holding_refcell_ref)]
     async fn advertise(&self) -> Result<()> {
-        self.send_topic("$name", self.attributes.borrow().name.clone())
+        self.send_topic("$name", self.attributes.read().await.name.clone())
             .await?;
-        self.send_topic("$type", self.attributes.borrow().type_.clone())
+        self.send_topic("$type", self.attributes.read().await.type_.clone())
             .await?;
         self.send_topic(
             "$properties",
             self.attributes
-                .borrow()
+                .read()
+                .await
                 .properties
                 .iter()
                 .map(|p| p.id.as_str())
@@ -207,16 +213,17 @@ impl Node<'_> {
         )
         .await?;
 
-        for property in self.properties() {
+        for property in self.properties().await {
             property.advertise().await?;
         }
 
         Ok(())
     }
 
-    pub fn property(&self, id: &str) -> Option<Property> {
+    pub async fn property(&self, id: &str) -> Option<Property> {
         self.attributes
-            .borrow()
+            .read()
+            .await
             .properties
             .iter()
             .find(|property| property.id == id)
@@ -226,9 +233,10 @@ impl Node<'_> {
             })
     }
 
-    pub fn properties(&self) -> Vec<Property> {
+    pub async fn properties(&self) -> Vec<Property> {
         self.attributes
-            .borrow()
+            .read()
+            .await
             .properties
             .iter()
             .map(|attributes| Property {
@@ -243,8 +251,8 @@ impl Node<'_> {
         attributes: &PropertyAttributes,
     ) -> Result<Property> {
         // work around a limitiation of borrowck??
-        if self.property(&attributes.id).is_some() {
-            return Ok(self.property(&attributes.id).unwrap());
+        if self.property(&attributes.id).await.is_some() {
+            return Ok(self.property(&attributes.id).await.unwrap());
         }
 
         self.device.send_topic("$state", DeviceState::Init).await?;
@@ -252,7 +260,7 @@ impl Node<'_> {
         let id = attributes.id.clone();
 
         self.attributes
-            .try_borrow_mut()
+            .try_write()
             .context("Failed to mutably borrow node attributes")?
             .properties
             .push(attributes.clone());
@@ -261,7 +269,7 @@ impl Node<'_> {
 
         self.device.send_topic("$state", DeviceState::Ready).await?;
 
-        Ok(self.property(&id).unwrap())
+        Ok(self.property(&id).await.unwrap())
     }
 }
 

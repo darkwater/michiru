@@ -5,6 +5,7 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DeviceInfo {
+    pub friendly_name: String,
     pub ieee_address: String,
     pub model_id: String,
     pub manufacturer: String,
@@ -39,6 +40,29 @@ pub struct DeviceDefinition {
     pub exposes: Vec<Expose>,
 }
 
+impl DeviceDefinition {
+    pub fn property(&self, property: &str) -> Option<&Feature> {
+        for expose in &self.exposes {
+            match expose {
+                Expose::Generic(f) => {
+                    if f.meta().property == property {
+                        return Some(f);
+                    }
+                }
+                Expose::Specific(s) => {
+                    for feature in &s.features {
+                        if feature.meta().property == property {
+                            return Some(feature);
+                        }
+                    }
+                }
+            }
+        }
+
+        todo!()
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(untagged)]
@@ -55,20 +79,20 @@ impl Expose {
         }
     }
 
-    pub fn property(&self) -> &str {
-        match self {
-            Expose::Generic(f) => f.meta().property.as_str(),
-            Expose::Specific(s) => s.features[0].meta().property.as_str(),
-        }
-    }
+    // pub fn property(&self) -> &str {
+    //     match self {
+    //         Expose::Generic(f) => f.meta().property.as_str(),
+    //         Expose::Specific(s) => s.features[0].meta().property.as_str(),
+    //     }
+    // }
 
-    pub fn name(&self) -> &str {
-        match self {
-            Expose::Generic(f) => f.meta().name.as_str(),
-            // note: specific features don't have a name
-            Expose::Specific(s) => s.features[0].meta().property.as_str(),
-        }
-    }
+    // pub fn name(&self) -> &str {
+    //     match self {
+    //         Expose::Generic(f) => f.meta().name.as_str(),
+    //         // note: specific features don't have a name
+    //         Expose::Specific(s) => s.features[0].meta().property.as_str(),
+    //     }
+    // }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

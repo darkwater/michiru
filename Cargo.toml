@@ -5,6 +5,7 @@ members = [
     "michiru-home-assistant",
     "michiru-inspector",
     "michiru-zigbee2mqtt",
+    "michiru-zstack",
 ]
 resolver = "2"
 

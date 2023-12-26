@@ -112,6 +112,7 @@ impl Zigbee2Mqtt {
 
 fn device_ui(device: &DeviceInfo, ui: &mut egui::Ui) {
     let DeviceInfo {
+        friendly_name,
         ieee_address,
         model_id,
         manufacturer,
@@ -121,6 +122,8 @@ fn device_ui(device: &DeviceInfo, ui: &mut egui::Ui) {
         disabled,
         definition: DeviceDefinition { description, exposes },
     } = &device;
+
+    ui.heading(friendly_name);
 
     Grid::new("details")
         .num_columns(2)

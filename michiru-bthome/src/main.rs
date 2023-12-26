@@ -104,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
                         .node(LINK_ID)
                         .unwrap()
                         .property(RSSI_ID)
+                        .await
                         .unwrap()
                         .send(Payload::Integer(rssi as i64))
                         .await?;
